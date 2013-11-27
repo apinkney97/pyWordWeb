@@ -1,8 +1,10 @@
+from __future__ import division
 import string
 import sys
 from collections import deque
+from setqueue import SetQueue
 
-__author__ = 'Alex'
+__author__ = 'Alex Pinkney'
 
 
 class Edge:
@@ -73,11 +75,12 @@ class WordWeb:
     def print_dot(self):
         print "graph G {"
 
-        for n in self.nodes:  # dot does not allow numeric identifiers, so we use 'n' as a prefix
-            print "\tn%d [label='%s'];" % (n.id, n.word)
+        # dot does not allow numeric identifiers, so we use 'n' as a prefix
+        for node in self.nodes:
+            print "\tn%d [label='%s'];" % (node.id, node.word)
 
-        for e in self.edges:
-            print "\tn%d -- n%d;" % (e.get_node(True), e.get_node(False))
+        for edge in self.edges:
+            print "\tn%d -- n%d;" % (edge.get_node(True), edge.get_node(False))
 
         print "}"
 
@@ -105,14 +108,14 @@ class WordWeb:
         counts = {}
         for head in heads:
             seen = []
-            queue = deque([head])
+            queue = SetQueue([head])
             while len(queue):
-                node = queue.popleft()
+                node = queue.remove()
                 seen.append(node)
                 kids = node.get_neighbours()
                 for kid in kids:
                     if kid not in seen and kid not in queue:
-                        queue.append(kid)
+                        queue.add(kid)
             size = len(seen)
             if size not in counts:
                 counts[size] = 1
@@ -124,21 +127,27 @@ class WordWeb:
         max_depth = 0
         diameter_routes = []
 
+        count = 0
         for head in self.nodes:
 
-            done = []
-            queue = deque([head])
+            count += 1
+            sys.stderr.write("%.2f%% %s (%d of %d)\n" % (100 * count / len(self.nodes), head.word, count, len(self.nodes)))
+            done = set()
+            queue = SetQueue([head])
+
             depths = {head: 0}
 
             last_seen = head
 
             while len(queue):
-                last_seen = queue.popleft()
-                done.append(last_seen)
+                last_seen = queue.remove()
+
+                done.add(last_seen)
                 neighbours = last_seen.get_neighbours()
                 for neighbour in neighbours:
                     if neighbour not in done and neighbour not in queue:
-                        queue.append(neighbour)
+                        queue.add(neighbour)
+
                         depths[neighbour] = depths[last_seen] + 1
 
             if depths[last_seen] >= max_depth:
@@ -160,12 +169,13 @@ class WordWeb:
 def main(args):
     if len(args) < 3:
         sys.stderr.write(
-            "Error: Too few arguments. Call is: \"python %s path-to-word-list word-length\"\n" % args[0])
+            "Error: Call is: \"python %s path-to-word-list word-length\"\n" %
+            args[0])
         exit(1)
 
     # TODO: replace with command line arg
     get_longest = True
-    do_graphviz = False
+    print_dot = False
     get_clusters = False
 
     dict_file = args[1]
@@ -186,9 +196,9 @@ def main(args):
     if get_longest:
         diameter, routes = word_web.get_diameter_routes()
         routes.sort()
-        print "d = %d, %d equivalent routes:\n%s" % (diameter, len(routes), routes)
+        print "%d:\t%d\t%s" % (length, diameter, routes)
 
-    if do_graphviz:
+    if print_dot:
         word_web.print_dot()
 
     if get_clusters:
