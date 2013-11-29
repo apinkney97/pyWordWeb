@@ -1,6 +1,8 @@
 from __future__ import division
+import logging
 import string
 import sys
+import argparse
 from collections import deque
 from setqueue import SetQueue
 
@@ -51,28 +53,87 @@ class Node:
 
 
 class WordWeb:
-    def __init__(self, dictionary):
+    def __init__(self, dictionary, letter_swaps=True, add_remove=True, use_anagrams=True):
         self.nodes = []
         self.edges = []
+        self.dictionary = dictionary
 
-        # TODO also allow anagrams and add/remove letter
+        if use_anagrams:
+            logging.info('finding anagrams')
+            self.anagrams = {}
+            for word in self.dictionary:
+                key = get_anagram_key(dictionary[word])
+                if key not in self.anagrams:
+                    self.anagrams[key] = []
+                self.anagrams[key].append(word)
 
-        while len(dictionary):
-            node = dictionary.popitem()[1]
-            word = node.word
+        logging.info("Building graph")
+        while len(self.dictionary):
+            node = self.dictionary.popitem()[1]
 
-            for i in xrange(0, len(word)):
-                start = word[:i]
-                end = word[i + 1:]
-                for c in string.lowercase:
-                    new_word = start + c + end
-                    if new_word in dictionary:
-                        edge = Edge(node, dictionary[new_word])
-                        self.edges.append(edge)
+            neighbours = []
+
+            if letter_swaps:
+                neighbours.extend(self.find_letter_swaps(node))
+
+            if add_remove:
+                neighbours.extend(self.find_add_letter(node))
+                neighbours.extend(self.find_remove_letter(node))
+
+            if use_anagrams:
+                anagrams = self.anagrams[get_anagram_key(node)]
+                anagrams.remove(node.word)
+                neighbours.extend(anagrams)
+
+            for neighbour in neighbours:
+                edge = Edge(node, self.dictionary[neighbour])
+                self.edges.append(edge)
 
             self.nodes.append(node)
 
+    def find_letter_swaps(self, node):
+        word = node.word
+        neighbours = []
+
+        for i in xrange(0, len(word)):
+            start = word[:i]
+            end = word[i + 1:]
+            for c in string.lowercase:
+                new_word = start + c + end
+                if new_word in self.dictionary:
+                    neighbours.append(new_word)
+
+        return neighbours
+
+    def find_add_letter(self, node):
+        word = node.word
+        neighbours = []
+
+        for i in xrange(0, len(word) + 1):
+            start = word[:i]
+            end = word[i:]
+            for c in string.lowercase:
+                new_word = start + c + end
+                if new_word in self.dictionary:
+                    neighbours.append(new_word)
+
+        return neighbours
+
+    def find_remove_letter(self, node):
+        word = node.word
+        neighbours = []
+
+        for i in xrange(0, len(word)):
+            start = word[:i]
+            end = word[i + 1:]
+            new_word = start + end
+            if new_word in self.dictionary:
+                neighbours.append(new_word)
+
+        return neighbours
+
     def print_dot(self):
+        logging.info("Printing dot")
         print "graph G {"
 
         # dot does not allow numeric identifiers, so we use 'n' as a prefix
@@ -80,38 +141,47 @@ class WordWeb:
             print "\tn%d [label='%s'];" % (node.id, node.word)
 
         for edge in self.edges:
-            print "\tn%d -- n%d;" % (edge.get_node(True), edge.get_node(False))
+            print "\tn%d -- n%d;" % (edge.get_node(True).id, edge.get_node(False).id)
 
         print "}"
 
     def get_disjoint_subgraphs(self):
-        not_seen = list(self.nodes)
+        logging.info("Calculating disjoint subgraphs")
+        not_seen = {}
+        for node in self.nodes:
+            not_seen[node.word] = node
+
         heads = []
 
         while len(not_seen):
-            head = not_seen.pop()
+            head = not_seen.popitem()[1]
             heads.append(head)
 
+            logging.debug("Expanding %s", head.word)
             queue = deque([head])
             while len(queue):
                 n = queue.popleft()
                 kids = n.get_neighbours()
                 for kid in kids:
-                    if kid in not_seen:
-                        not_seen.remove(kid)
+                    if kid.word in not_seen:
+                        not_seen.pop(kid.word)
                         queue.append(kid)
 
         return heads
 
     def get_disjoint_subgraph_sizes(self):
         heads = self.get_disjoint_subgraphs()
+        logging.info("Calculating sizes of subgraphs")
         counts = {}
+        n = 0
         for head in heads:
-            seen = []
+            n += 1
+            logging.info("Counting subgraph %d of %d", n, len(heads))
+            seen = set()
             queue = SetQueue([head])
             while len(queue):
                 node = queue.remove()
-                seen.append(node)
+                seen.add(node)
                 kids = node.get_neighbours()
                 for kid in kids:
                     if kid not in seen and kid not in queue:
@@ -124,6 +194,7 @@ class WordWeb:
         return counts
 
     def get_diameter_routes(self):
+        logging.info("Finding shortest paths.")
         max_depth = 0
         diameter_routes = []
 
@@ -131,7 +202,7 @@ class WordWeb:
         for head in self.nodes:
 
             count += 1
-            sys.stderr.write("%.2f%% %s (%d of %d)\n" % (100 * count / len(self.nodes), head.word, count, len(self.nodes)))
+            logging.info("Word %d of %d: %s (%.2f%%)", count, len(self.nodes), head.word, 100 * count / len(self.nodes))
             done = set()
             queue = SetQueue([head])
 
@@ -147,9 +218,8 @@ class WordWeb:
                 for neighbour in neighbours:
                     if neighbour not in done and neighbour not in queue:
                         queue.add(neighbour)
-
                         depths[neighbour] = depths[last_seen] + 1
-
+            logging.info("Furthest word: %d (%s)", depths[last_seen], last_seen.word)
             if depths[last_seen] >= max_depth:
                 if depths[last_seen] > max_depth:
                     diameter_routes = []
@@ -166,32 +236,71 @@ class WordWeb:
         return max_depth, diameter_routes
 
 
-def main(args):
-    if len(args) < 3:
-        sys.stderr.write(
-            "Error: Call is: \"python %s path-to-word-list word-length\"\n" %
-            args[0])
-        exit(1)
+def get_anagram_key(node):
+    letters = list(node.word)
+    letters.sort()
+    return ''.join(letters)
 
-    # TODO: replace with command line arg
-    get_longest = True
-    print_dot = False
-    get_clusters = False
 
-    dict_file = args[1]
-    length = int(args[2])
+def main():
+
+    parser = argparse.ArgumentParser(description='Generate a graph from a word list.',
+                                     epilog="The value of -l is ignored if -r is supplied. "
+                                            "If none of -a, -s or -r are supplied, -s is implied.")
+    parser.add_argument("word_list", help="path to file containing the list of words to process (one word per line)")
+    parser.add_argument("-a", "--anagrams", help="allow anagrams", action="store_true")
+    parser.add_argument("-s", "--substitutions", help="allow letter substitutions", action="store_true")
+    parser.add_argument("-r", "--removals-additions", help="allow letters to be removed/added", action="store_true")
+    parser.add_argument("-l", "--word-length", help="use words only of length LEN", type=int, metavar='LEN')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-L", "--longest-paths", help="find shortest paths of maximum length", action="store_true")
+    group.add_argument("-D", "--print-dot", help="output the entire graph in dot notation", action="store_true")
+    group.add_argument("-S", "--print-graph-sizes", help="output histogram data of disjoint subgraph sizes and their "
+                                                         "frequencies", action="store_true")
+    parser.add_argument("-v", "--verbose", help="increase output verbosity", action="count", default=0)
+    args = parser.parse_args()
+
+    verbosity = args.verbose
+    if verbosity == 1:
+        logging.basicConfig(level=logging.INFO)
+    elif verbosity > 1:
+        logging.basicConfig(level=logging.DEBUG)
+
+    get_longest = args.longest_paths
+    print_dot = args.print_dot
+    get_clusters = args.print_graph_sizes
+
+    letter_swaps = args.substitutions
+    add_remove = args.removals_additions
+    anagrams = args.anagrams
+
+    if True not in (letter_swaps, add_remove, anagrams):
+        letter_swaps = True
+
+    dict_file = args.word_list
+    length = args.word_length
 
     f = open(dict_file)
 
     word_list = {}
 
+    read_all = add_remove or length is None
+
+    if read_all:
+        logging.info("Reading in all words")
+    else:
+        logging.info("Reading in words of length %d", length)
+
     for line in f:
         word = line.strip()
-        if len(word) == length:
+        if read_all or len(word) == length:
             word_list[word] = Node(word)
     f.close()
 
-    word_web = WordWeb(word_list)
+    logging.info("%d words read", len(word_list))
+
+    word_web = WordWeb(word_list, letter_swaps, add_remove, anagrams)
+    logging.info("Graph initialised")
 
     if get_longest:
         diameter, routes = word_web.get_diameter_routes()
@@ -202,8 +311,10 @@ def main(args):
         word_web.print_dot()
 
     if get_clusters:
-        print word_web.get_disjoint_subgraph_sizes()
+        data = word_web.get_disjoint_subgraph_sizes()
+        for k in sorted(data.keys()):
+            print "%s\t%s" % (k, data[k])
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
