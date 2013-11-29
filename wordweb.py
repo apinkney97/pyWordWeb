@@ -138,7 +138,7 @@ class WordWeb:
 
         # dot does not allow numeric identifiers, so we use 'n' as a prefix
         for node in self.nodes:
-            print "\tn%d [label='%s'];" % (node.id, node.word)
+            print '\tn%d [label="%s"];' % (node.id, node.word)
 
         for edge in self.edges:
             print "\tn%d -- n%d;" % (edge.get_node(True).id, edge.get_node(False).id)
