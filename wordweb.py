@@ -293,7 +293,7 @@ def main():
 
     for line in f:
         word = line.strip()
-        if read_all or len(word) == length:
+        if (read_all or len(word) == length) and all([c in string.lowercase for c in word]):
             word_list[word] = Node(word)
     f.close()
 
