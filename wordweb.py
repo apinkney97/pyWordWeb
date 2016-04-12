@@ -1,7 +1,6 @@
 from __future__ import division
 import logging
 import string
-import sys
 import argparse
 from collections import deque
 from setqueue import SetQueue
@@ -9,7 +8,7 @@ from setqueue import SetQueue
 __author__ = 'Alex Pinkney'
 
 
-class Edge:
+class Edge(object):
     def __init__(self, node1, node2):
         self.node1 = node1
         self.node2 = node2
@@ -30,7 +29,7 @@ class Edge:
         return self.node2
 
 
-class Node:
+class Node(object):
     count = 0
 
     def __init__(self, word):
@@ -52,7 +51,7 @@ class Node:
         return False
 
 
-class WordWeb:
+class WordWeb(object):
     def __init__(self, dictionary, letter_swaps=True, add_remove=True, use_anagrams=True):
         self.nodes = []
         self.edges = []
@@ -62,7 +61,7 @@ class WordWeb:
             logging.info('finding anagrams')
             self.anagrams = {}
             for word in self.dictionary:
-                key = get_anagram_key(dictionary[word])
+                key = self.get_anagram_key(dictionary[word])
                 if key not in self.anagrams:
                     self.anagrams[key] = []
                 self.anagrams[key].append(word)
@@ -81,7 +80,7 @@ class WordWeb:
                 neighbours.extend(self.find_remove_letter(node))
 
             if use_anagrams:
-                anagrams = self.anagrams[get_anagram_key(node)]
+                anagrams = self.anagrams[self.get_anagram_key(node)]
                 anagrams.remove(node.word)
                 neighbours.extend(anagrams)
 
@@ -125,7 +124,7 @@ class WordWeb:
 
         for i in xrange(0, len(word)):
             start = word[:i]
-            end = word[i + 1:]
+            end = word[i+1:]
             new_word = start + end
             if new_word in self.dictionary:
                 neighbours.append(new_word)
@@ -230,16 +229,14 @@ class WordWeb:
                     route = head.word + " - " + last_seen.word
                 else:
                     route = last_seen.word + " - " + head.word
-                if route not in diameter_routes:
-                    diameter_routes.append(route)
+                diameter_routes.append(route)
 
-        return max_depth, diameter_routes
+        return max_depth, sorted(set(diameter_routes))
 
 
-def get_anagram_key(node):
-    letters = list(node.word)
-    letters.sort()
-    return ''.join(letters)
+    @staticmethod
+    def get_anagram_key(node):
+        return ''.join(sorted(node.word))
 
 
 def main():
@@ -293,7 +290,7 @@ def main():
 
     for line in f:
         word = line.strip()
-        if (read_all or len(word) == length) and all([c in string.lowercase for c in word]):
+        if (read_all or len(word) == length) and all(c in string.lowercase for c in word):
             word_list[word] = Node(word)
     f.close()
 
@@ -304,7 +301,6 @@ def main():
 
     if get_longest:
         diameter, routes = word_web.get_diameter_routes()
-        routes.sort()
         print "%d:\t%d\t%s" % (length, diameter, routes)
 
     if print_dot:

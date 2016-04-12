@@ -12,7 +12,7 @@ __author__ = 'Alex Pinkney'
 """
 
 
-class SetQueue:
+class SetQueue(object):
     def __init__(self, items=None):
         if not items:
             items = []
